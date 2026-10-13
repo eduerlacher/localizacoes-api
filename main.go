@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -36,7 +37,11 @@ func main() {
 	r.GET("/upas", func(c *gin.Context) {
 		rows, err := db.Query("SELECT id, lat, long, title, phone, street, number, neighborhood, city, state, zip_code FROM upas")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
+			log.Println("ERRO SQL UPA:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Database query failed",
+				"details": err.Error(),
+			})
 			return
 		}
 		defer rows.Close()
@@ -50,6 +55,7 @@ func main() {
 
 			err := rows.Scan(&id, &lat, &long, &title, &phone, &street, &number, &neighborhood, &city, &state, &zipCode)
 			if err != nil {
+				log.Println("ERRO SCAN UPA:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read UPA"})
 				return
 			}
@@ -60,7 +66,7 @@ func main() {
 				"address": map[string]interface{}{
 					"street": street, "number": number.String,
 					"neighborhood": neighborhood.String, "city": city,
-					"state": state, "zipCode": zipCode.String,
+					"state": strings.TrimSpace(state), "zipCode": zipCode.String,
 				},
 				"openingHours": "24/7",
 			}
@@ -86,27 +92,35 @@ func main() {
                friday_open, friday_close,
                saturday_open, saturday_close,
                sunday_open, sunday_close
-        FROM ubs
+        FROM ubss
     `)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
+			log.Println("ERRO SQL UBS:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed", "details": err.Error()})
 			return
 		}
 		defer rows.Close()
 
-		var ubss []map[string]interface{}
+		ubss := []map[string]interface{}{}
+
+		formatTime := func(t sql.NullString) interface{} {
+			if !t.Valid || len(t.String) < 5 {
+				return nil
+			}
+			return t.String[:5]
+		}
 
 		for rows.Next() {
 			var id, title, street, city, state string
 			var lat, long float64
 			var phone, number, neighborhood, zipCode sql.NullString
-			var mondayOpen, mondayClose sql.NullTime
-			var tuesdayOpen, tuesdayClose sql.NullTime
-			var wednesdayOpen, wednesdayClose sql.NullTime
-			var thursdayOpen, thursdayClose sql.NullTime
-			var fridayOpen, fridayClose sql.NullTime
-			var saturdayOpen, saturdayClose sql.NullTime
-			var sundayOpen, sundayClose sql.NullTime
+			var mondayOpen, mondayClose sql.NullString
+			var tuesdayOpen, tuesdayClose sql.NullString
+			var wednesdayOpen, wednesdayClose sql.NullString
+			var thursdayOpen, thursdayClose sql.NullString
+			var fridayOpen, fridayClose sql.NullString
+			var saturdayOpen, saturdayClose sql.NullString
+			var sundayOpen, sundayClose sql.NullString
 
 			err := rows.Scan(
 				&id, &lat, &long, &title, &phone,
@@ -120,15 +134,9 @@ func main() {
 				&sundayOpen, &sundayClose,
 			)
 			if err != nil {
+				log.Println("ERRO SCAN UBS:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read UBS"})
 				return
-			}
-
-			formatTime := func(t sql.NullTime) interface{} {
-				if !t.Valid {
-					return nil
-				}
-				return t.Time.Format("15:04")
 			}
 
 			openingHours := map[string]interface{}{
@@ -164,7 +172,7 @@ func main() {
 					"number":       number.String,
 					"neighborhood": neighborhood.String,
 					"city":         city,
-					"state":        state,
+					"state":        strings.TrimSpace(state),
 					"zipCode":      zipCode.String,
 				},
 				"openingHours": openingHours,
@@ -172,8 +180,8 @@ func main() {
 
 			ubss = append(ubss, ubs)
 		}
-
 		if err := rows.Err(); err != nil {
+			log.Println("UBS rows error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read UBS records"})
 			return
 		}
