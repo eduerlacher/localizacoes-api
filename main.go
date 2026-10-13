@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -8,8 +7,8 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -76,6 +75,111 @@ func main() {
 		c.JSON(http.StatusOK, upas)
 	})
 
+	r.GET("/ubss", func(c *gin.Context) {
+		rows, err := db.Query(`
+        SELECT id, lat, long, title, phone,
+               street, number, neighborhood, city, state, zip_code,
+               monday_open, monday_close,
+               tuesday_open, tuesday_close,
+               wednesday_open, wednesday_close,
+               thursday_open, thursday_close,
+               friday_open, friday_close,
+               saturday_open, saturday_close,
+               sunday_open, sunday_close
+        FROM ubs
+    `)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var ubss []map[string]interface{}
+
+		for rows.Next() {
+			var id, title, street, city, state string
+			var lat, long float64
+			var phone, number, neighborhood, zipCode sql.NullString
+			var mondayOpen, mondayClose sql.NullTime
+			var tuesdayOpen, tuesdayClose sql.NullTime
+			var wednesdayOpen, wednesdayClose sql.NullTime
+			var thursdayOpen, thursdayClose sql.NullTime
+			var fridayOpen, fridayClose sql.NullTime
+			var saturdayOpen, saturdayClose sql.NullTime
+			var sundayOpen, sundayClose sql.NullTime
+
+			err := rows.Scan(
+				&id, &lat, &long, &title, &phone,
+				&street, &number, &neighborhood, &city, &state, &zipCode,
+				&mondayOpen, &mondayClose,
+				&tuesdayOpen, &tuesdayClose,
+				&wednesdayOpen, &wednesdayClose,
+				&thursdayOpen, &thursdayClose,
+				&fridayOpen, &fridayClose,
+				&saturdayOpen, &saturdayClose,
+				&sundayOpen, &sundayClose,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read UBS"})
+				return
+			}
+
+			formatTime := func(t sql.NullTime) interface{} {
+				if !t.Valid {
+					return nil
+				}
+				return t.Time.Format("15:04")
+			}
+
+			openingHours := map[string]interface{}{
+				"monday":    map[string]interface{}{"open": formatTime(mondayOpen), "close": formatTime(mondayClose)},
+				"tuesday":   map[string]interface{}{"open": formatTime(tuesdayOpen), "close": formatTime(tuesdayClose)},
+				"wednesday": map[string]interface{}{"open": formatTime(wednesdayOpen), "close": formatTime(wednesdayClose)},
+				"thursday":  map[string]interface{}{"open": formatTime(thursdayOpen), "close": formatTime(thursdayClose)},
+				"friday":    map[string]interface{}{"open": formatTime(fridayOpen), "close": formatTime(fridayClose)},
+				"saturday":  nil,
+				"sunday":    nil,
+			}
+
+			if saturdayOpen.Valid || saturdayClose.Valid {
+				openingHours["saturday"] = map[string]interface{}{
+					"open": formatTime(saturdayOpen), "close": formatTime(saturdayClose),
+				}
+			}
+
+			if sundayOpen.Valid || sundayClose.Valid {
+				openingHours["sunday"] = map[string]interface{}{
+					"open": formatTime(sundayOpen), "close": formatTime(sundayClose),
+				}
+			}
+
+			ubs := map[string]interface{}{
+				"id":    id,
+				"lat":   lat,
+				"long":  long,
+				"title": title,
+				"phone": phone.String,
+				"address": map[string]interface{}{
+					"street":       street,
+					"number":       number.String,
+					"neighborhood": neighborhood.String,
+					"city":         city,
+					"state":        state,
+					"zipCode":      zipCode.String,
+				},
+				"openingHours": openingHours,
+			}
+
+			ubss = append(ubss, ubs)
+		}
+
+		if err := rows.Err(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read UBS records"})
+			return
+		}
+
+		c.JSON(http.StatusOK, ubss)
+	})
 	log.Println("API running on http://localhost:8080")
 	log.Fatal(r.Run(":8080"))
 }
