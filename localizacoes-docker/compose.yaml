@@ -1,0 +1,17 @@
+
+services:
+  db:
+    image: postgres:18
+    container_name: localizacoes-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: localizacoes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: userpassword
+    ports:
+      - "5433:5432"
+    volumes:
+    - postgres_data:/var/lib/postgresql
+
+volumes:
+  postgres_data:
